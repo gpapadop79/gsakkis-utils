@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<?xml-stylesheet href="style.xsl" type="text/xsl" title="default stylesheet"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+    <head>
+    <title>Sweetapp.com</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    </head>
+    <body text="#000000" bgcolor="#FFFFFF" link="#0000EF" vlink="#51188E" alink="#FF0000">
+    <div align="center">
+        <h1>Python Coding Contest (Contest #1)</h1>
+    </div>
+    <h2>Contest Idea</h2>
+    <p>I've decided to try hosting a weekly Python programming contest. 
+    </p>
+    <p>For now, I'll be judging solutions first by correctness and then by
+    speed. I'd prefer to judge on some other criterion, such as elegance,
+    but it is hard to do so objectively. But I will provide my unofficial,
+    non-objective judgement of the best design too.</p>
+    
+    <p>At the end of the contest, I'll run benchmarks and post the results,
+    along with all the submitted solutions, on my website. I'll also write
+    a summary for the Python list</p>
+    <p>I'm going to start small and any feedback would be very welcome
+    (<a href="mailto:brian@sweetapp.com">Brian Quinlan &lt;brian@sweetapp.com&gt;</a>)!
+    Now onto the first problem...
+    <h2>Problem Description</h2>
+    <p>
+    This problem is an adaptation of the real-life problem: how to
+    fly from A to B with the minimum possible cost. Since I am 
+    incredibly cheap, I am willing to take several flights to get
+    to my final destination. I'm more far more concerned with
+    money than with prompt arrival, so the complete trip can take an
+    arbitrary amount of time. 
+    </p>
+    <p>
+    Your task is to write a scheduling module that generates the cheapest
+    possible route from A to B.
+    </p>
+    <p>The solution requires a bit of thinking but not much code (my solution
+    is 40 lines of code, including comments).</p>
+    <h2>Example</h2>
+    <pre>        
+    >>> from fly import fly
+    >>> schedule = [
+    ... # (from, to) : cost
+    ... {('A', 'B') : 100.00, ('A', 'C') : 10.00, ('C', 'B') : 20}, # Day 1
+    ... {('A', 'B') : 100.00, ('A', 'C') : 10.00, ('C', 'B') : 20}] # Day 2
+    >>> # Calculate the optimal route to fly from A to B. The route should be:
+    >>> # Day 1: A => C (cost 20) 
+    >>> # Day 2: C => B (cost 20)
+    >>> fly('A', 'B', schedule)
+    ['C', 'B']
+
+    >>> schedule = [
+    ...   # From    # To       # Cost
+    ... {('Athens', 'Berlin') : 55.25,   # Day 1 flights
+    ...  ('Berlin', 'Athens') : 73.00,   
+    ...  ('Dresden', 'Athens') : 85.50,
+    ...  ('Dresden', 'Berlin') : 12.50},
+    ... {('Berlin', 'Athens') : 23.55,   # Day 2 flights
+    ...  ('Berlin', 'Cairo') : 125.15,  
+    ...  ('Berlin', 'Dresden') : 18.25,
+    ...  ('Dresden', 'Athens') : 85.50,
+    ...  ('Dresden', 'Berlin') : 13.50},
+    ... {('Athens', 'Cairo') : 65.55,    # Day 3 flights
+    ...  ('Berlin', 'Athens') : 23.55,
+    ...  ('Berlin', 'Cairo') : 125.15,
+    ...  ('Dresden', 'Athens') : 85.50},
+    ... {('Athens', 'Cairo') : 7.25,     # Day 4 flights
+    ...  ('Berlin', 'Athens') : 23.55,
+    ...  ('Dresden', 'Athens') : 85.50}]
+
+    >>> # Calculate the optimal route to fly from Dresden to Cairo.
+    >>> # The route should be:
+    >>> # Day 1: Dresden => Berlin (cost 12.50) 
+    >>> # Day 2: Berlin => Athens (cost 23.55)
+    >>> # Day 3: Athens (stay the day: fixed cost of 20)
+    >>> # Day 4: Athens => Cairo (cost  7.25)
+    >>> # If you think that this route is absurd, let me assure
+    >>> # you that I am actually flying it (including the night in
+    >>> # Athens) in October
+    >>> fly('Dresden', 'Cairo', schedule)
+    ['Berlin', 'Athens', 'Athens', 'Cairo']
+    >>> # There is now way to get from Cairo to Dresden
+    >>> fly('Cairo', 'Dresden', schedule)
+    Traceback (most recent call last):
+    ...
+    ValueError
+    </pre>
+    <h2>Assumptions</h2>
+    <p>
+    <ul>
+        <li>All flights are scheduled at noon and take less than a day to complete
+        i.e. at most one flight per day can be taken.</li>
+        
+        <li>It is possible to take not a flight on a day but it costs 20 &#8364; (for a 
+        rock-bottom hostel - I can sleep in the airplane but not in the airport)</i>
+        
+        <li>It is not always possible to reach the desired destination. In that case
+        you should raise ValueError</li>
+    </ul>
+    </p>
+    <h2>Test Framework/Module Stub</h2>
+    <p>You can download a stub version of the fly module along with a simple
+    test suite <a href="problem.zip">here</a>.
+    <h2>Submitting your Solution</h2>
+    <p>The solution deadline is July 24, 2005. 
+    When you are done your implementation, please send it to me at
+    <a href="mailto:brian@sweetapp.com">Brian Quinlan &lt;brian@sweetapp.com&gt;</a>.
+    </p>
+    <h2>Testing</h2>
+    <p>
+    I'm going to test all of the submissions using the test suite
+    that you can find as part of test framework. I will pick a random
+    seed so everyone's tests
+    are identical (I'm a very fair person).</p>
+    <p>The exact test environment will be:
+    <ul>
+        <li>IBM Thinkpad T41 (768MB RAM, 1.6GHz Centrino)
+        <li>Python 2.4.1 (with -OO switch; no extra modules)</li>
+        <li>Ubuntu 5.04 Live CD</li>
+    </ul>
+    </p>
+    </body>
+</html>
