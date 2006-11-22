@@ -32,7 +32,7 @@ class ProgressBar(object):
         if min >= max:
             raise ValueError('min value should be lower than max')
         self._bar = array('c', '[]')
-        self._out = stream
+        self.out = stream
         self._width = width - len(self._bar)
         self._min,self._max = map(float, (min,max))
         self._span = self._max - self._min
@@ -70,8 +70,8 @@ class ProgressBar(object):
             self._bar[startIndex:startIndex+len(percentString)] = percentString
             changed = True
         if changed:
-            print >> self._out, self._bar.tostring(), '\r',
-            self._out.flush()
+            print >> self.out, self._bar.tostring(), '\r',
+            self.out.flush()
 
     def update_by(self, amount=1):
         '''Inform this progress bar about the progress of the displayed procedure.
@@ -112,7 +112,7 @@ class ProgressBar(object):
             current += step
         # update one final time after completion
         self.update_to(current)
-        print >> self._out
+        print >> self.out
     
 #====== IterableProgressBar ====================================================
 
