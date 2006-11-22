@@ -222,7 +222,7 @@ def itermerge(iterables, key=lambda x:x, value=lambda x:x, progressbar=None):
             progressbar.update_by(sum(len(v) for v in values))
         yield (min_key, values)
     if progressbar is not None:
-        print
+        print >> progressbar.out
 
 #======= Row iterators for original text files =================================
 
