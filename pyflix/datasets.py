@@ -11,13 +11,15 @@ from records import MOVIE_ID_TYPECODE, USER_ID_TYPECODE
 
 class Dataset(object):
 
-    def __init__(self, dir):
+    def __init__(self, dir, progressbar=True):
         dir = path(dir)
         # XXX: allocate an extra dummy movie at index 0 making the list effectively 1-based
         self._movies = [None]
-        self._movies.extend(self._MovieRecordType.fromfile(dir/'movies.dat'))
+        self._movies.extend(self._MovieRecordType.fromfile(dir/'movies.dat',
+                                                           progressbar=progressbar))
         self._users = users = {}
-        for user in self._UserRectordType.fromfile(dir/'users.dat'):
+        for user in self._UserRecordType.fromfile(dir/'users.dat',
+                                                  progressbar=progressbar):
             users[user.id] = user
 
     def iterMoviesUsers(self):
@@ -52,7 +54,7 @@ class Dataset(object):
             return N.array(self._users.keys(), dtype=USER_ID_TYPECODE)
         
     _MovieRecordType = UnratedMovieRecord
-    _UserRectordType = UnratedUserRecord
+    _UserRecordType = UnratedUserRecord
 
 
 class RatedDataset(Dataset):
@@ -149,7 +151,7 @@ class RatedDataset(Dataset):
         return RatedRecord.iterValueRatings(*users, **min_max_ratings)
         
     _MovieRecordType = RatedMovieRecord
-    _UserRectordType = RatedUserRecord
+    _UserRecordType = RatedUserRecord
 
 
 ##class MovieInfo(object):
@@ -173,12 +175,14 @@ def writePredictionFile(infile, outfile, predictor, format='%.3f'):
 if __name__ == '__main__':
     import sys
     d = RatedDataset(sys.argv[1])
-    predictor = lambda m,u: 3.6
-    print d.rmse(predictor)
-    ##writePredictionFile(sys.argv[1], 'dummy.txt', predictor)
     
-    #for m,u,r in d.iterMoviesUsersRatings():
-        #print m,u,r
+    if 0:
+        predictor = lambda m,u: 3.6
+        print d.rmse(predictor)
+        ##writePredictionFile(sys.argv[1], 'dummy.txt', predictor)
+    
+    for m,u,r in d.iterMoviesUsersRatings():
+        print m,u,r
 
     #from setup import timeCall    
     #from itertools import islice
