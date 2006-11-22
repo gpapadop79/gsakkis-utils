@@ -36,7 +36,7 @@ class Record(object):
         raise NotImplementedError('Abstract class')
 
     @classmethod
-    def fromfile(cls, datfile, readbuffer=128*1024**2):
+    def fromfile(cls, datfile, readbuffer=128*1024**2, progressbar=False):
         from struct import unpack
         size = path(datfile).size
         f = open(datfile,'rb+',readbuffer)
@@ -46,18 +46,22 @@ class Record(object):
         ksize, csize, vsize = [N.dtype(t).itemsize for t in kdtype,cdtype,vdtype]
         num_partitions = cls._num_partitions()
         csize *= num_partitions
-        bar = ProgressBar(0, size, width=70)
+        if progressbar:
+            if not isinstance(progressbar, ProgressBar):
+                progressbar = ProgressBar(0, size, width=70)
         read = m.read
         for key in iter(lambda:read(ksize), ''):
-            # 1. read the key
+            # 1. unpack the key
             key = unpack(kdtype,key)[0]
             # 2. read the partition counts
             counts = N.fromstring(read(csize), cdtype, num_partitions)
             # 3. read the values
             num_values = N.sum(counts)
             values = N.fromstring(read(vsize*num_values), vdtype, num_values)
-            bar.update_to(m.tell())
+            if progressbar:
+                progressbar.update_to(m.tell())
             yield cls(key, values, counts)
+        print >> progressbar.out
 
     @classmethod
     def fromvalues(cls, key, partitioned_values):
