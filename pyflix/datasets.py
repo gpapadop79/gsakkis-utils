@@ -9,6 +9,7 @@ from path import path
 
 from pyflix.records import *
 from pyflix.setup import iterQset
+from pyflix.progressbar import ProgressBar
 
 #==== Abstract dataset =========================================================
 
@@ -69,16 +70,25 @@ class UnratedDataset(AbstractDataset):
 
 class RatedDataset(AbstractDataset):
 
-    def iterMoviesUsersRatings(self, min_rating=None, max_rating=None):
+    def iterMoviesUsersRatings(self, min_rating=None, max_rating=None,
+                               progressbar=False):
         '''Return an iterator over all (movie,user,rating) tuples of this dataset.'''
         if self._movies is not None:
+            if progressbar:
+                progressbar = ProgressBar(0, len(self._movies), width=70)
             for movie_id,movie in self._movies.iteritems():
+                if progressbar: progressbar.update() 
                 for user_id, rating in movie.iterValueRatings(min_rating,max_rating):
                     yield (movie_id, user_id, rating)
         else:
+            if progressbar:
+                progressbar = ProgressBar(0, len(self._users), width=70)
             for user_id,user in self._users.iteritems():
+                if progressbar: progressbar.update()
                 for movie_id, rating in user.iterValueRatings(min_rating,max_rating):
                     yield (movie_id, user_id, rating)
+        if progressbar:
+            print >> progressbar.out
 
     def movies(self, *users, **min_max_ratings):
         '''Return an array of the movie IDs rated by the given user(s).
@@ -103,10 +113,10 @@ class RatedDataset(AbstractDataset):
                                             **min_max_ratings)
         else: return AbstractDataset.users(self)
 
-    def rmse(self, predictor):
+    def rmse(self, algorithm, progressbar=False):
         s,n = 0.0,0
-        for movie,user,rating in self.iterMoviesUsersRatings():
-            d = predictor(movie,user) - rating
+        for movie,user,rating in self.iterMoviesUsersRatings(progressbar=progressbar):
+            d = algorithm(movie,user) - rating
             s += d*d
             n += 1
         return (s/n) ** 0.5
@@ -168,7 +178,7 @@ class RatedDataset(AbstractDataset):
 
 #==== writePredictions =========================================================
 
-def writePredictions(qualifying_txt, output, predictor, format='%.3f'):
+def writePredictions(qualifying_txt, output, algorithm, format='%.3f'):
     if not hasattr(output, 'read'):
         output = open(output, 'w')
     last_movie_id = None
@@ -176,7 +186,7 @@ def writePredictions(qualifying_txt, output, predictor, format='%.3f'):
         if movie_id != last_movie_id:
             print >> output, '%d:' % movie_id
             last_movie_id = movie_id
-        print >> output, format % predictor(movie_id,user_id)
+        print >> output, format % algorithm(movie_id,user_id)
 
 #==== Data index ===============================================================
 
@@ -224,9 +234,9 @@ if __name__ == '__main__':
     d = RatedDataset(sys.argv[1])
     
     if 0:
-        predictor = lambda m,u: 3.6
-        print d.rmse(predictor)
-        ##writePredictions(sys.argv[1], 'dummy.txt', predictor)
+        algorithm = lambda m,u: 3.6
+        print d.rmse(algorithm)
+        ##writePredictions(sys.argv[1], 'dummy.txt', algorithm)
     from pyflix import timeCall
     
     #print timeCall('d.users(6)', d.users, 6)
