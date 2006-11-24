@@ -1,16 +1,15 @@
-__all__ = ['Record', 'RatedRecord', 'UnratedRecord',
+__all__ = ['AbstractRecord', 'RatedRecord', 'UnratedRecord',
            'UnratedMovieRecord', 'UnratedUserRecord',
-           'RatedMovieRecord', 'RatedUserRecord']
+           'RatedMovieRecord', 'RatedUserRecord',
+           'MOVIE_ID_TYPECODE', 'USER_ID_TYPECODE']
 
-import mmap
-from struct import pack
-from itertools import izip
+#==== imports ==================================================================
+
+from struct import pack,unpack
+from itertools import izip,imap,chain
 import numpy as N
-from path import path
 
-from progressbar import ProgressBar
-
-#====== types pertinent to the binary files sorted by movie and by user ========
+#====== types pertinent to the movie and user binary files =====================
 
 MOVIE_ID_TYPECODE = 'H' # unsigned short
 USER_ID_TYPECODE  = 'L' # unsigned long
@@ -26,72 +25,62 @@ class _UserTypes(object):
     _ValueDtype = MOVIE_ID_TYPECODE
     _CountDtype = 'H'      # number of movies rated by a single user
 
+def itemsize(dtype):
+    try: memo = itemsize._memo
+    except AttributeError: memo = itemsize._memo = {}
+    try: return memo[dtype]
+    except KeyError:
+        d = memo[dtype] = N.dtype(dtype).itemsize
+        return d        
 
 #====== Base abstract record type ==============================================
 
-class Record(object):
+class AbstractRecord(object):
     __slots__ = ('id', '_values')
-
-    def __init__(self, key, values, counts):
-        raise NotImplementedError('Abstract class')
-
-    @classmethod
-    def fromfile(cls, datfile, readbuffer=128*1024**2, progressbar=False):
-        from struct import unpack
-        size = path(datfile).size
-        f = open(datfile,'rb+',readbuffer)
-        m = mmap.mmap(f.fileno(), size, 
-                      access=mmap.ACCESS_READ)
-        kdtype, cdtype, vdtype = cls._KeyDtype, cls._CountDtype, cls._ValueDtype
-        ksize, csize, vsize = [N.dtype(t).itemsize for t in kdtype,cdtype,vdtype]
-        num_partitions = cls._num_partitions()
-        csize *= num_partitions
-        if progressbar:
-            if not isinstance(progressbar, ProgressBar):
-                progressbar = ProgressBar(0, size, width=70)
-        read = m.read
-        for key in iter(lambda:read(ksize), ''):
-            # 1. unpack the key
-            key = unpack(kdtype,key)[0]
-            # 2. read the partition counts
-            counts = N.fromstring(read(csize), cdtype, num_partitions)
-            # 3. read the values
-            num_values = N.sum(counts)
-            values = N.fromstring(read(vsize*num_values), vdtype, num_values)
-            if progressbar:
-                progressbar.update_to(m.tell())
-            yield cls(key, values, counts)
-        print >> progressbar.out
-
-    @classmethod
-    def fromvalues(cls, key, partitioned_values):
-        counts = map(len,partitioned_values)
-        values = []
-        for v in partitioned_values:
-            v.sort() # sort the values in each partition
-            values.extend(v)
-        return cls(key, values, counts)
 
     def values(self):        
         raise NotImplementedError
-                    
-    @staticmethod
-    def commonValues(*records):
-        '''Return the common values of the given records.'''
-        return intersect_arrays(*[record.values() for record in records])
 
     @classmethod
-    def _num_partitions(cls):
-        raise NotImplementedError
+    def fromfile(cls, datfile):
+        '''Read the record that starts at the current position of the given file.
+        
+        @param datfile: A file-like object.
+        '''
+        read = datfile.read
+        num_counts = cls._num_counts
+        kdtype, cdtype, vdtype = cls._KeyDtype, cls._CountDtype, cls._ValueDtype
+        # 1. read the key
+        key = unpack(kdtype,read(itemsize(kdtype)))[0]
+        # 2. read the partition counts
+        counts = N.fromstring(read(num_counts*itemsize(cdtype)), cdtype, num_counts)
+        # 3. read the values
+        num_values = counts.sum()
+        values = N.fromstring(read(num_values*itemsize(vdtype)), vdtype, num_values)
+        return cls(key, values, counts)
+
+    @classmethod
+    def fromvalues(cls, key, partitioned_values):
+        counts = N.fromiter(imap(len,partitioned_values), cls._CountDtype)        
+        values = N.fromiter(chain(*(imap(sorted,partitioned_values))), cls._ValueDtype)
+        return cls(key, values, counts)
+                    
+    @staticmethod
+    def commonValues(records):
+        '''Return the common values of the given records.'''
+        return intersect_arrays(record.values() for record in records)
+
+    _num_counts = NotImplemented
 
 #====== Unrated record types ===================================================
 
-class UnratedRecord(Record):
+class UnratedRecord(AbstractRecord):
     '''A simple record type composed of a key (id) and an array of values.'''
     
     def __init__(self, key, values, counts=None):
+        assert values.dtype == self._ValueDtype
         self.id = key
-        self._values = N.array(values, self._ValueDtype)
+        self._values = values
     
     def values(self):        
         return self._values
@@ -104,9 +93,8 @@ class UnratedRecord(Record):
     def __str__(self):
         return str((self.id, self._values))
 
-    @classmethod
-    def _num_partitions(cls):
-        return 1
+    _num_counts = 1
+
 
 class UnratedMovieRecord(UnratedRecord, _MovieTypes):
     pass
@@ -114,17 +102,17 @@ class UnratedMovieRecord(UnratedRecord, _MovieTypes):
 class UnratedUserRecord(UnratedRecord, _UserTypes):
     pass
 
-
 #====== Rated record types =====================================================
 
-class RatedRecord(Record):
+class RatedRecord(AbstractRecord):
 
-    __slots__ = Record.__slots__ + ('_counts',)
+    __slots__ = AbstractRecord.__slots__ + ('_counts',)
         
     def __init__(self, key, values, counts):
+        assert values.dtype == self._ValueDtype and counts.dtype == self._CountDtype
         self.id = key
-        self._values = N.array(values, self._ValueDtype)
-        self._counts = N.array(counts, self._CountDtype)
+        self._values = values 
+        self._counts = counts
     
     #--------- accessors -------------------------------------------------------
                     
@@ -154,37 +142,31 @@ class RatedRecord(Record):
     #--------- joining records -------------------------------------------------
     
     @staticmethod
-    def commonValues(*records, **min_max_ratings):
-        '''Return the common values of the given records.
-        
-        @param min_max_ratings: Optional 'min_rating' and 'max_rating' arguments
-        '''
-        args = [min_max_ratings.get(name) for name in 'min_rating','max_rating']
-        return intersect_arrays(*[record.values(*args) for record in records])
+    def commonValues(records, min_rating=None, max_rating=None):
+        '''Return the common values of the given records.'''
+        return intersect_arrays(record.values(min_rating,max_rating)
+                                for record in records)
     
     @staticmethod
-    def jointRatings(*records, **min_max_ratings):
+    def jointRatings(records, min_rating=None, max_rating=None):
         '''Return a 2-D array whose A[i,j] element is the rating of records[i]
         for the j-th common value returned by C{common_values()}.
         '''
-        return RatedRecord._jointValueRatings(*records, **min_max_ratings)[1]
+        return RatedRecord._jointValueRatings(records, min_rating,max_rating)[1]
     
     @staticmethod
-    def iterCommonValuesRatings(*records, **min_max_ratings):
+    def iterCommonValuesRatings(records, min_rating=None, max_rating=None):
         '''Iterate over (common_value,ratings) tuples for each common_value 
         returned by C{common_values()}, where ratings is the array of ratings
         given for this common_value by all records.
-        '''
-        common_values, joint_ratings = RatedRecord._jointValueRatings(*records,
-                                                                  **min_max_ratings)
-        for i,value in enumerate(common_values):
-            yield (value, joint_ratings[:,i])
+        '''        
+        return izip(*RatedRecord._jointValueRatings(records, min_rating, max_rating))
     
     #--------- string representation -------------------------------------------
     
     def tostring(self):
-        return ''.join([pack(self._KeyDtype, self.id),
-                        self._counts.tostring(), self._values.tostring()])
+        return ''.join([pack(self._KeyDtype, self.id), self._counts.tostring(),
+                                                       self._values.tostring()])
         
     def __str__(self):
         return str((self.id, self._counts, self._values))
@@ -192,10 +174,7 @@ class RatedRecord(Record):
     #--------- internal attributes ---------------------------------------------
 
     _AllRatings = N.arange(1,6,dtype=N.uint8)
-
-    @classmethod
-    def _num_partitions(cls):
-        return len(cls._AllRatings)
+    _num_counts = len(_AllRatings)
         
     def _normalizeSlice(self, min_rating, max_rating):
         get_index = lambda x: N.where(self._AllRatings==x)[0][0]
@@ -210,11 +189,12 @@ class RatedRecord(Record):
         return slice(min_rating,max_rating)
 
     @staticmethod
-    def _jointValueRatings(*records, **min_max_ratings):
-        args = [min_max_ratings.get(name) for name in 'min_rating','max_rating']
-        values_list = [record.values(*args) for record in records]
-        common_values = intersect_arrays(*values_list)
-        joint_ratings = N.empty((len(records),len(common_values)),
+    def _jointValueRatings(records, min_rating=None, max_rating=None):
+        if not (hasattr(records, '__getitem__') and hasattr(records,'__len__')):
+            records = list(records)        
+        values_list = [record.values(min_rating,max_rating) for record in records]
+        common_values = intersect_arrays(values_list)
+        joint_ratings = N.empty((len(common_values),len(records)),
                                 dtype=RatedRecord._AllRatings.dtype)
         if len(common_values):
             for i,values in enumerate(values_list):
@@ -223,9 +203,10 @@ class RatedRecord(Record):
                 # find the indices of the common values
                 c_indices = N.searchsorted(values[s_indices], common_values)
                 # take the ratings for the i-th record and rearrange them according to s_indices 
-                ratings = records[i].ratings(*args)[s_indices]
-                # and finally take the corresponding ratings for the common values
-                joint_ratings[i] = ratings[c_indices]
+                ratings = records[i].ratings(min_rating,max_rating)[s_indices]
+                # and finally assign to the i-th column the corresponding ratings
+                # for the common values
+                joint_ratings[:,i] = ratings[c_indices]
         return (common_values, joint_ratings)
 
 
@@ -235,14 +216,14 @@ class RatedMovieRecord(RatedRecord, _MovieTypes):
 class RatedUserRecord(RatedRecord, _UserTypes):
     pass
 
-
 #===============================================================================
 
-def intersect_arrays(*arrays):
+def intersect_arrays(arrays):
     '''Intersection of 1D arrays with unique elements.'''
-    current = arrays[0]
-    for i in xrange(1,len(arrays)):
-        aux = N.concatenate((current,arrays[i]))
+    arrays = iter(arrays)
+    current = arrays.next()
+    for array in arrays:
+        aux = N.concatenate((current,array))
         aux.sort()
         current = aux[aux[1:] == aux[:-1]]
     return current

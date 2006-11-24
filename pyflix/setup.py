@@ -1,20 +1,17 @@
 #!/usr/bin/env python
 
-#todo: OO refactoring
-
 #==== imports ==================================================================
 
-import  sys
-from time import time
+import cPickle
 from operator import itemgetter
 from optparse import OptionParser, make_option
 
 import numpy as N
 from path import path
 
-from progressbar import ProgressBar, progress
-from records import MOVIE_ID_TYPECODE, USER_ID_TYPECODE
-from records import RatedMovieRecord, RatedUserRecord, UnratedMovieRecord, UnratedUserRecord
+from pyflix import timeCall
+from pyflix.records import *
+from pyflix.progressbar import ProgressBar, progress
 
 #==== global constants =========================================================
 
@@ -24,8 +21,6 @@ QUALIFYING_SUBDIR = path('qualifying_set')
 
 SORTED_MOVIE_SUBDIR = path('sorted_by_movie')
 SORTED_USER_SUBDIR = path('sorted_by_user')
-MOVIES_DAT = path('movies.dat')
-USERS_DAT = path('users.dat')
 
 RECORD_DTYPE = N.dtype('%s,%s' % (MOVIE_ID_TYPECODE,USER_ID_TYPECODE))
 
@@ -80,18 +75,18 @@ def buildBinFiles(input_dir, output_dir, do_movies=True, do_users=True, scrub=Tr
     if not q_files[0].exists():
         buildBinQualFile(input_dir/'qualifying.txt', q_files[0])
     for dir, files, isRated in [(t_dir, t_files, True),
-                               (p_dir, p_files, True),
-                               (q_dir, q_files, False)]:
+                                (p_dir, p_files, True),
+                                (q_dir, q_files, False)]:
         # 2. sort each file by movie and/or user
         timeCall('  Sorted files', sortFiles, files, do_movies, do_users)
         # 3. merge them all
         if do_movies:
             recordType = isRated and RatedMovieRecord or UnratedMovieRecord
-            timeCall('  Merged movies.dat', mergeSortedFiles, dir, MOVIES_DAT,
+            timeCall('  Merged movies', mergeSortedFiles, dir, 'movies',
                      SORTED_MOVIE_SUBDIR, 0, recordType, **buffers)
         if do_users:
             recordType = isRated and RatedUserRecord or UnratedUserRecord
-            timeCall('  Merged users.dat', mergeSortedFiles, dir, USERS_DAT,
+            timeCall('  Merged users', mergeSortedFiles, dir, 'users',
                      SORTED_USER_SUBDIR, 1, recordType, **buffers)
 
 
@@ -157,26 +152,31 @@ def sortFiles(paths, sort_by_movie=True, sort_by_user=True):
             records = sort_records(p,SORTED_USER_SUBDIR,'f1',records)
 
 
-def mergeSortedFiles(dir, datfile_name, sorted_subdir, sortIndex, recordType,
+def mergeSortedFiles(dir, outfile_prefix, sorted_subdir, sortIndex, recordType,
                      read_buf=-1, write_buf=-1):
-    sorted_dir = dir / sorted_subdir
-    outfile = dir/ datfile_name    
-    if outfile.exists():
+    sorted_dir = dir.joinpath(sorted_subdir)
+    datfile, idxfile = [dir.joinpath('%s.%s' % (outfile_prefix,ext))
+                        for ext in 'dat', 'idx']
+    if datfile.exists() and idxfile.exists():
         return
-    print "* Merging sorted files from %s to %s..." % (sorted_dir,outfile)
+    print "* Merging sorted files from %s ..." % sorted_dir
     entry_size = RECORD_DTYPE.itemsize
     def iter_entries(read):
         # iterate over the (movie_id,user_id) tuples from the reader
         for packed in iter(lambda:read(entry_size), ''):
             yield N.fromstring(packed,RECORD_DTYPE,1)[0]
+    # make one entry stream per each sorted-by-rating file
     files = sorted(sorted_dir.files())
     iterators = [iter_entries(open(f,'rb',read_buf/len(files)).read) for f in files]
-    write = open(outfile, 'wb', write_buf).write
+    key2index = {} # map keys (movie or user IDs) to their index in the fat file
+    datfile = open(datfile, 'wb', write_buf)
     progressbar = ProgressBar(0, sum(f.size for f in files)/entry_size, width=70)
     for key,partitioned_values in itermerge(iterators, key=itemgetter(sortIndex),
                                             value=itemgetter(1-sortIndex),
                                             progressbar=progressbar):
-        write(recordType.fromvalues(key,partitioned_values).tostring())
+        key2index[key] = datfile.tell()
+        datfile.write(recordType.fromvalues(key,partitioned_values).tostring())
+    cPickle.dump(key2index,open(dir.joinpath('%s.idx' % outfile_prefix), 'wb'))
 
 
 def itermerge(iterables, key=lambda x:x, value=lambda x:x, progressbar=None): 
@@ -233,7 +233,7 @@ def iterMset(path, buffering=1):
         yield (int(movie_id), year, title)
 
 def iterTset(dir, buffering=1):
-    for f in progress(dir.files()[:40], width=70):
+    for f in progress(dir.files(), width=70):
         iterlines = (line.strip() for line in open(f, buffering=buffering))
         movie_id = int(iterlines.next()[:-1])
         for line in iterlines:
@@ -262,14 +262,6 @@ def iterQset(path, buffering=1):
         else:
             yield (movie_id, int(user_id)) ##, date)
 
-#===============================================================================
-
-def timeCall(msg, func, *args, **kwds):
-    start = time()
-    r = func(*args,**kwds)
-    m,s = divmod(time()-start,60)
-    print >> sys.stderr, '%s in %d minutes and %.2f seconds' % (msg,m,s)
-    return r
 
 if __name__ == '__main__':
     main()
