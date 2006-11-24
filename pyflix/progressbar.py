@@ -73,7 +73,7 @@ class ProgressBar(object):
             print >> self.out, self._bar.tostring(), '\r',
             self.out.flush()
 
-    def update_by(self, amount=1):
+    def update(self, amount=1):
         '''Inform this progress bar about the progress of the displayed procedure.
 
         @param amount: A number that indicates how much has the procedure
