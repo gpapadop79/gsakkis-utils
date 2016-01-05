@@ -1,0 +1,1 @@
+Several general purpose modules I have written along the years. Most of it as at beta stage at best, lacking documentation and/or unit testing. An "UNDER CONSTRUCTION" warning should be implied at all times.
